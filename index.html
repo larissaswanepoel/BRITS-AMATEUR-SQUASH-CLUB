@@ -79,7 +79,33 @@ function calc(){const m=mine();let a=0,b=0,any=0;for(let i=0;i<5;i++){const X=$(
  e.textContent=tr(any?`${n1} ${a} – ${b} ${n2}`+(a!=b?' · Wenner: '+(a>b?n1:n2):''):'')}
 async function addP(){const f=capFirst($('#nn').value),l=capFirst($('#nl').value),email=$('#ne').value.trim(),phone=$('#np').value.trim();if(!f||!l||!email)return alert('Naam, van en e-posadres is verpligtend.');if(!/^\S+@\S+\.\S+$/.test(email))return alert('Voer ’n geldige e-posadres in.');const n=f+' '+l;const r=ranked().length;
  if(D.players.some(p=>(p.email||'').toLowerCase()==email.toLowerCase()))return alert('Hierdie e-posadres is reeds op die spelerlys.');await db.collection('players').add({name:n,first:f,last:l,email,phone,active:true,rank:r+1,joined:Date.now()});toast('Speler bygevoeg ✓');}
-async function toggle(p){if(p.active!==false){const oldRank=p.rank;await db.doc('players/'+p.id).update({active:false,rank:null});await Promise.all(ranked().filter(x=>x.id!==p.id&&x.rank>oldRank).map(x=>db.doc('players/'+x.id).update({rank:x.rank-1})))}else{const snap=await FB.getDocs(FB.collection(db,'players'));const active=snap.docs.map(x=>x.data()).filter(x=>x.active===true&&Number.isInteger(x.rank)&&x.rank>0);const next=active.length?Math.max(...active.map(x=>x.rank))+1:1;await db.doc('players/'+p.id).update({active:true,pending:false,rank:next})}}
+async function toggle(p){
+  try{
+    const snap=await FB.getDocs(FB.collection(db,'players'));
+    const all=snap.docs.map(x=>({id:x.id,...x.data()}));
+    const cur=all.find(x=>x.id===p.id);
+    if(!cur)return alert('Speler kon nie gevind word nie.');
+    const active=all.filter(x=>x.active===true).sort((a,b)=>(Number(a.rank)||999999)-(Number(b.rank)||999999));
+    if(cur.active===true){
+      const oldRank=Number(cur.rank)||active.findIndex(x=>x.id===cur.id)+1;
+      const updates=[];
+      for(const x of active){
+        if(x.id===cur.id) continue;
+        const r=Number(x.rank)||0;
+        if(r>oldRank) updates.push(db.doc('players/'+x.id).update({rank:r-1}));
+      }
+      updates.push(db.doc('players/'+cur.id).update({active:false,rank:null}));
+      await Promise.all(updates);
+      toast(cur.name+' is nou onaktief ✓');
+    }else{
+      const next=active.length+1;
+      await db.doc('players/'+cur.id).update({active:true,pending:false,rank:next});
+      toast(cur.name+' is nou aktief op #'+next+' ✓');
+    }
+  }catch(e){
+    alert('Kon nie speler se aktiewe status verander nie: '+(e.message||e.code));
+  }
+}
 const go=t=>{tab=t;viewP=null;render()};
 const NI='type="number" min="0" max="11" step="1" inputmode="numeric" oninput="cl(this)" onkeydown="if(/[-.e+,]/.test(event.key))event.preventDefault()"';
 function cl(el){if(el.value!==''){el.value=Math.min(GP,Math.max(0,Math.round(+el.value)||0))}calc()}
