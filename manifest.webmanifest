@@ -1,0 +1,9 @@
+{
+  "name": "Brits Amateur Squash Club",
+  "short_name": "Brits Squash",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#0b1f4b",
+  "description": "Brits Amateur Squash Club ladder, challenges and match results."
+}
