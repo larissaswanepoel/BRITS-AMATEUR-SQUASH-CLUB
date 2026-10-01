@@ -137,26 +137,50 @@ async function addP(){const f=capFirst($('#nn').value),l=capFirst($('#nl').value
  if(D.players.some(p=>(p.email||'').toLowerCase()==email.toLowerCase()))return alert('Hierdie e-posadres is reeds op die spelerlys.');await db.collection('players').add({name:n,first:f,last:l,email,phone,active:true,rank:r+1,points:0,joined:Date.now()});toast('Speler bygevoeg ✓');}
 async function toggle(p){
   try{
-    const snap=await FB.getDocs(FB.collection(FB.firestore,'players'));
-    const all=snap.docs.map(x=>({id:x.id,...x.data()}));
-    const cur=all.find(x=>x.id===p.id);
-    if(!cur)return alert('Speler kon nie gevind word nie.');
-    const active=all.filter(x=>x.active===true).sort((a,b)=>(Number(a.rank)||999999)-(Number(b.rank)||999999));
-    if(cur.active===true){
-      const oldRank=Number(cur.rank)||active.findIndex(x=>x.id===cur.id)+1;
-      const updates=[];
-      for(const x of active){
-        if(x.id===cur.id) continue;
-        const r=Number(x.rank)||0;
-        if(r>oldRank) updates.push(db.doc('players/'+x.id).update({rank:r-1}));
-      }
-      updates.push(db.doc('players/'+cur.id).update({active:false,rank:null}));
+    // Gebruik die app se eie Firebase-laag. Die vorige weergawe het
+    // per ongeluk die rou Firebase collection()-funksie hier verkeerd
+    // aangeroep, wat die "Expected first argument..." fout veroorsaak het.
+    // Lees die huidige gedeelde data wat deur Firestore se realtime listener gevoed word.
+    const all = D.players.map(x => ({...x}));
+    const cur = all.find(x => x.id === p.id);
+    if(!cur) return alert('Speler kon nie gevind word nie.');
+
+    const active = all
+      .filter(x => x.active === true)
+      .sort((a,b) => {
+        const pa = Number.isFinite(Number(a.points)) ? Number(a.points) : 0;
+        const pb = Number.isFinite(Number(b.points)) ? Number(b.points) : 0;
+        return pb-pa || (Number(a.rank)||999999)-(Number(b.rank)||999999);
+      });
+
+    if(cur.active === true){
+      const oldIndex = active.findIndex(x => x.id === cur.id);
+      if(oldIndex < 0) return alert('Speler is reeds nie aktief nie.');
+
+      const updates = [];
+      updates.push(db.doc('players/'+cur.id).update({active:false,rank:null,pending:false}));
+      // Behou almal se punte; herbereken slegs die posisies van die oorblywende aktiewe spelers.
+      const remaining = active.filter(x=>x.id!==cur.id);
+      remaining.forEach((x,i)=>{
+        updates.push(db.doc('players/'+x.id).update({rank:i+1}));
+      });
       await Promise.all(updates);
       toast(cur.name+' is nou onaktief ✓');
     }else{
-      const next=active.length+1;
-      await db.doc('players/'+cur.id).update({active:true,pending:false,rank:next,points:0});
-      toast(cur.name+' is nou aktief op #'+next+' ✓');
+      // Heraktiveer met die bestaande punte. Daarna word almal volgens punte gerangskik.
+      await db.doc('players/'+cur.id).update({
+        active:true,
+        pending:false
+      });
+      const combined = active.concat({...cur,active:true});
+      combined.sort((a,b)=>{
+        const pa=Number.isFinite(Number(a.points))?Number(a.points):0;
+        const pb=Number.isFinite(Number(b.points))?Number(b.points):0;
+        return pb-pa || String(a.name||'').localeCompare(String(b.name||''));
+      });
+      await Promise.all(combined.map((x,i)=>db.doc('players/'+x.id).update({rank:i+1})));
+      const nr=combined.findIndex(x=>x.id===cur.id)+1;
+      toast(cur.name+' is nou aktief op #'+nr+' ✓');
     }
   }catch(e){
     alert('Kon nie speler se aktiewe status verander nie: '+(e.message||e.code));
